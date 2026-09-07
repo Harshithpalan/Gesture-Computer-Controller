@@ -1,0 +1,383 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Gesture Computer Controller</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0a0a0f;--card:#12121a;--border:#1e1e2e;--accent:#6c5ce7;--accent2:#a29bfe;--text:#e0e0e0;--muted:#666;--success:#00b894;--danger:#e17055;--warn:#fdcb6e}
+body{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;overflow-x:hidden}
+.app{display:flex;flex-direction:column;min-height:100vh}
+header{padding:20px 32px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;background:var(--card)}
+header h1{font-size:1.4rem;font-weight:600;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+header .badge{font-size:.7rem;padding:4px 10px;border-radius:20px;background:var(--accent);color:#fff;font-weight:500}
+.main{display:grid;grid-template-columns:1fr 320px;gap:24px;padding:24px 32px;flex:1}
+.video-section{display:flex;flex-direction:column;gap:16px}
+.video-container{position:relative;border-radius:16px;overflow:hidden;background:#000;aspect-ratio:4/3;border:2px solid var(--border)}
+.video-container video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1)}
+.video-container canvas{position:absolute;top:0;left:0;width:100%;height:100%;transform:scaleX(-1)}
+.video-overlay{position:absolute;top:16px;left:16px;display:flex;gap:8px;z-index:2}
+.status-dot{width:10px;height:10px;border-radius:50%;background:var(--danger);transition:background .3s}
+.status-dot.active{background:var(--success);box-shadow:0 0 8px var(--success)}
+.status-text{font-size:.75rem;color:var(--muted);display:flex;align-items:center;gap:6px}
+.gesture-display{position:absolute;bottom:16px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.7);backdrop-filter:blur(10px);padding:8px 20px;border-radius:24px;font-size:1rem;font-weight:600;color:var(--accent2);z-index:2;border:1px solid rgba(108,92,231,.3);transition:all .2s}
+.sidebar{display:flex;flex-direction:column;gap:16px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px}
+.card h3{font-size:.85rem;font-weight:600;color:var(--accent2);margin-bottom:12px;text-transform:uppercase;letter-spacing:.5px}
+.gesture-list{list-style:none;display:flex;flex-direction:column;gap:8px}
+.gesture-list li{display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:8px;background:rgba(255,255,255,.03);transition:background .2s;font-size:.85rem}
+.gesture-list li.active{background:rgba(108,92,231,.15);border:1px solid rgba(108,92,231,.3)}
+.gesture-list li .icon{font-size:1.2rem;width:28px;text-align:center}
+.gesture-list li .action{color:var(--muted);font-size:.75rem;margin-left:auto}
+.controls-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.control-btn{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-radius:10px;border:1px solid var(--border);background:rgba(255,255,255,.02);cursor:pointer;transition:all .2s;font-size:.7rem;color:var(--muted)}
+.control-btn:hover{border-color:var(--accent);background:rgba(108,92,231,.08)}
+.control-btn.active{border-color:var(--accent);background:rgba(108,92,231,.15);color:var(--text)}
+.control-btn .ctrl-icon{font-size:1.4rem}
+.volume-bar{margin-top:8px}
+.volume-bar .bar-bg{height:6px;background:var(--border);border-radius:3px;overflow:hidden}
+.volume-bar .bar-fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:3px;transition:width .2s}
+.volume-bar .vol-label{display:flex;justify-content:space-between;font-size:.7rem;color:var(--muted);margin-top:4px}
+.start-btn{width:100%;padding:14px;border:none;border-radius:10px;background:linear-gradient(135deg,var(--accent),#8b5cf6);color:#fff;font-size:.95rem;font-weight:600;cursor:pointer;transition:all .2s;margin-top:8px}
+.start-btn:hover{opacity:.9;transform:translateY(-1px)}
+.start-btn:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.log-box{max-height:120px;overflow-y:auto;font-size:.7rem;font-family:'Cascadia Code',monospace;color:var(--muted);line-height:1.6}
+.log-box::-webkit-scrollbar{width:4px}
+.log-box::-webkit-scrollbar-thumb{background:var(--border);border-radius:2px}
+@media(max-width:768px){.main{grid-template-columns:1fr;padding:16px}.video-container{aspect-ratio:16/9}}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1>Hand Gesture Controller</h1>
+    <span class="badge">v1.0</span>
+  </header>
+  <div class="main">
+    <div class="video-section">
+      <div class="video-container">
+        <video id="webcam" autoplay playsinline></video>
+        <canvas id="overlay"></canvas>
+        <div class="video-overlay">
+          <div class="status-dot" id="statusDot"></div>
+          <span class="status-text" id="statusText">Initializing...</span>
+        </div>
+        <div class="gesture-display" id="gestureDisplay">Waiting for hand...</div>
+      </div>
+      <div class="card">
+        <h3>Event Log</h3>
+        <div class="log-box" id="logBox"></div>
+      </div>
+    </div>
+    <div class="sidebar">
+      <button class="start-btn" id="startBtn" onclick="initApp()">Start Camera</button>
+      <div class="card">
+        <h3>Gesture Map</h3>
+        <ul class="gesture-list" id="gestureList">
+          <li data-gesture="thumbs_up"><span class="icon">👍</span> Volume Up <span class="action">Thumbs Up</span></li>
+          <li data-gesture="thumbs_down"><span class="icon">👎</span> Volume Down <span class="action">Thumbs Down</span></li>
+          <li data-gesture="open_palm"><span class="icon">✋</span> Play / Pause <span class="action">Open Palm</span></li>
+          <li data-gesture="fist"><span class="icon">✊</span> Stop <span class="action">Fist</span></li>
+          <li data-gesture="peace"><span class="icon">✌️</span> Next Track <span class="action">Peace Sign</span></li>
+          <li data-gesture="point_left"><span class="icon">👈</span> Previous Track <span class="action">Point Left</span></li>
+        </ul>
+      </div>
+      <div class="card">
+        <h3>Current Status</h3>
+        <div class="controls-grid">
+          <div class="control-btn" id="ctrlPlay"><span class="ctrl-icon">▶</span>Play</div>
+          <div class="control-btn" id="ctrlPause"><span class="ctrl-icon">⏸</span>Pause</div>
+          <div class="control-btn" id="ctrlStop"><span class="ctrl-icon">⏹</span>Stop</div>
+          <div class="control-btn" id="ctrlPrev"><span class="ctrl-icon">⏮</span>Prev</div>
+          <div class="control-btn" id="ctrlNext"><span class="ctrl-icon">⏭</span>Next</div>
+          <div class="control-btn" id="ctrlMute"><span class="ctrl-icon">🔇</span>Mute</div>
+        </div>
+      </div>
+      <div class="card">
+        <h3>Volume</h3>
+        <div class="volume-bar">
+          <div class="bar-bg"><div class="bar-fill" id="volFill" style="width:50%"></div></div>
+          <div class="vol-label"><span id="volLabel">50%</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script>
+const video = document.getElementById('webcam');
+const canvas = document.getElementById('overlay');
+const ctx = canvas.getContext('2d');
+const statusDot = document.getElementById('statusDot');
+const statusText = document.getElementById('statusText');
+const gestureDisplay = document.getElementById('gestureDisplay');
+const logBox = document.getElementById('logBox');
+const startBtn = document.getElementById('startBtn');
+const volFill = document.getElementById('volFill');
+const volLabel = document.getElementById('volLabel');
+
+let hands = null;
+let camera = null;
+let currentGesture = null;
+let gestureHoldStart = 0;
+let lastActionTime = 0;
+const GESTURE_THRESHOLD = 600;
+const ACTION_COOLDOWN = 1000;
+let volume = 50;
+let isPlaying = false;
+let handHistory = [];
+
+function log(msg) {
+  const t = new Date().toLocaleTimeString();
+  logBox.innerHTML = `<div>[${t}] ${msg}</div>` + logBox.innerHTML;
+  if (logBox.children.length > 50) logBox.removeChild(logBox.lastChild);
+}
+
+function setStatus(active, text) {
+  statusDot.classList.toggle('active', active);
+  statusText.textContent = text;
+}
+
+function updateVolume(delta) {
+  volume = Math.max(0, Math.min(100, volume + delta));
+  volFill.style.width = volume + '%';
+  volLabel.textContent = volume + '%';
+}
+
+function highlightControl(id) {
+  document.querySelectorAll('.control-btn').forEach(b => b.classList.remove('active'));
+  const el = document.getElementById(id);
+  if (el) { el.classList.add('active'); setTimeout(() => el.classList.remove('active'), 800); }
+}
+
+function highlightGesture(name) {
+  document.querySelectorAll('.gesture-list li').forEach(li => li.classList.remove('active'));
+  const li = document.querySelector(`[data-gesture="${name}"]`);
+  if (li) li.classList.add('active');
+}
+
+function sendKey(key, code, keyCode) {
+  const opts = { key, code, keyCode, which: keyCode, bubbles: true };
+  document.dispatchEvent(new KeyboardEvent('keydown', opts));
+  document.dispatchEvent(new KeyboardEvent('keyup', opts));
+}
+
+function sendMediaKey(action) {
+  try {
+    if (navigator.mediaSession) {
+      navigator.mediaSession.setActionHandler(action, () => {});
+      navigator.mediaSession.playbackState = isPlaying ? 'playing' : 'paused';
+    }
+  } catch(e) {}
+  const keyMap = {
+    'playpause': { key: 'MediaPlayPause', code: 'MediaPlayPause', keyCode: 179 },
+    'previoustrack': { key: 'MediaTrackPrevious', code: 'MediaTrackPrevious', keyCode: 177 },
+    'nexttrack': { key: 'MediaTrackNext', code: 'MediaTrackNext', keyCode: 176 },
+    'stop': { key: 'MediaStop', code: 'MediaStop', keyCode: 178 },
+  };
+  if (keyMap[action]) {
+    const k = keyMap[action];
+    sendKey(k.key, k.code, k.keyCode);
+  }
+}
+
+function executeGesture(gesture) {
+  const now = Date.now();
+  if (now - lastActionTime < ACTION_COOLDOWN) return;
+  lastActionTime = now;
+
+  switch (gesture) {
+    case 'thumbs_up':
+      updateVolume(5);
+      highlightControl('ctrlPlay');
+      log('Volume Up -> ' + volume + '%');
+      break;
+    case 'thumbs_down':
+      updateVolume(-5);
+      highlightControl('ctrlPause');
+      log('Volume Down -> ' + volume + '%');
+      break;
+    case 'open_palm':
+      isPlaying = !isPlaying;
+      sendMediaKey('playpause');
+      highlightControl(isPlaying ? 'ctrlPlay' : 'ctrlPause');
+      log(isPlaying ? 'Play' : 'Pause');
+      break;
+    case 'fist':
+      sendMediaKey('stop');
+      isPlaying = false;
+      highlightControl('ctrlStop');
+      log('Stop');
+      break;
+    case 'peace':
+      sendMediaKey('nexttrack');
+      highlightControl('ctrlNext');
+      log('Next Track');
+      break;
+    case 'point_left':
+      sendMediaKey('previoustrack');
+      highlightControl('ctrlPrev');
+      log('Previous Track');
+      break;
+  }
+}
+
+function detectGesture(landmarks) {
+  const wrist = landmarks[0];
+  const thumbTip = landmarks[4];
+  const thumbIp = landmarks[3];
+  const indexTip = landmarks[8];
+  const indexPip = landmarks[6];
+  const middleTip = landmarks[12];
+  const middlePip = landmarks[10];
+  const ringTip = landmarks[16];
+  const ringPip = landmarks[14];
+  const pinkyTip = landmarks[20];
+  const pinkyPip = landmarks[18];
+
+  const indexUp = indexTip.y < indexPip.y;
+  const middleUp = middleTip.y < middlePip.y;
+  const ringUp = ringTip.y < ringPip.y;
+  const pinkyUp = pinkyTip.y < pinkyPip.y;
+  const thumbUp = thumbTip.y < thumbIp.y;
+
+  const fingersUp = [indexUp, middleUp, ringUp, pinkyUp].filter(Boolean).length;
+
+  // Thumbs up: thumb up, other fingers closed
+  if (thumbUp && fingersUp <= 1 && thumbTip.y < wrist.y) {
+    return 'thumbs_up';
+  }
+
+  // Thumbs down: thumb down, other fingers closed
+  if (!thumbUp && fingersUp <= 1 && thumbTip.y > wrist.y && !indexUp && !middleUp) {
+    return 'thumbs_down';
+  }
+
+  // Open palm: all fingers up
+  if (fingersUp >= 4 && indexUp && middleUp && ringUp && pinkyUp) {
+    return 'open_palm';
+  }
+
+  // Fist: all fingers closed
+  if (fingersUp === 0 && !thumbUp) {
+    return 'fist';
+  }
+
+  // Peace: index and middle up, others down
+  if (indexUp && middleUp && !ringUp && !pinkyUp) {
+    return 'peace';
+  }
+
+  // Point left: index finger pointing, check direction
+  if (indexUp && !middleUp && !ringUp && !pinkyUp) {
+    const dx = indexTip.x - wrist.x;
+    if (dx < -0.1) return 'point_left';
+  }
+
+  return null;
+}
+
+function onResults(results) {
+  canvas.width = video.videoWidth;
+  canvas.height = video.videoHeight;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  if (results.multiHandLandmarks && results.multiHandLandmarks.length > 0) {
+    setStatus(true, 'Hand detected');
+
+    for (const landmarks of results.multiHandLandmarks) {
+      drawConnectors(ctx, landmarks, HAND_CONNECTIONS, { color: '#6c5ce7', lineWidth: 2 });
+      drawLandmarks(ctx, landmarks, { color: '#a29bfe', lineWidth: 1, radius: 3 });
+
+      const gesture = detectGesture(landmarks);
+
+      if (gesture) {
+        highlightGesture(gesture);
+        gestureDisplay.textContent = gestureLabels[gesture] || gesture;
+
+        if (gesture === currentGesture) {
+          if (Date.now() - gestureHoldStart >= GESTURE_THRESHOLD) {
+            executeGesture(gesture);
+            gestureHoldStart = Date.now();
+          }
+        } else {
+          currentGesture = gesture;
+          gestureHoldStart = Date.now();
+        }
+      } else {
+        currentGesture = null;
+        gestureDisplay.textContent = 'Waiting for hand...';
+        highlightGesture('');
+      }
+    }
+  } else {
+    setStatus(false, 'No hand detected');
+    gestureDisplay.textContent = 'Waiting for hand...';
+    currentGesture = null;
+    highlightGesture('');
+  }
+}
+
+const gestureLabels = {
+  thumbs_up: 'Volume Up',
+  thumbs_down: 'Volume Down',
+  open_palm: 'Play / Pause',
+  fist: 'Stop',
+  peace: 'Next Track',
+  point_left: 'Previous Track'
+};
+
+async function initApp() {
+  startBtn.disabled = true;
+  startBtn.textContent = 'Starting...';
+  log('Initializing MediaPipe Hands...');
+
+  try {
+    hands = new Hands({
+      locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+    });
+
+    hands.setOptions({
+      maxNumHands: 1,
+      modelComplexity: 1,
+      minDetectionConfidence: 0.7,
+      minTrackingConfidence: 0.6
+    });
+
+    hands.onResults(onResults);
+
+    const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+    video.srcObject = stream;
+
+    video.onloadedmetadata = () => {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      log('Camera ready: ' + video.videoWidth + 'x' + video.videoHeight);
+
+      camera = new Camera(video, {
+        onFrame: async () => {
+          await hands.send({ image: video });
+        },
+        width: 640,
+        height: 480
+      });
+
+      camera.start();
+      startBtn.textContent = 'Running';
+      setStatus(false, 'Initializing hand tracking...');
+      log('Hand tracking active');
+    };
+  } catch (err) {
+    log('Error: ' + err.message);
+    startBtn.disabled = false;
+    startBtn.textContent = 'Start Camera';
+    setStatus(false, 'Camera access denied');
+  }
+}
+</script>
+</body>
+</html>
